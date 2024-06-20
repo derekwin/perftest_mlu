@@ -15,6 +15,7 @@
 #include "host_memory.h"
 #include "mmap_memory.h"
 #include "cuda_memory.h"
+#include "mlu_memory.h"
 #include "rocm_memory.h"
 #include "neuron_memory.h"
 #include "hl_memory.h"
@@ -562,6 +563,19 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 			}
 		}
 
+		if (mlu_memory_supported()) {
+			printf("      --use_mlu=<mlu device id>");
+			printf(" Use MLU specific device for GPUDirect RDMA testing\n");
+
+			printf("      --use_mlu_bus_id=<mlu full BUS id>");
+			printf(" Use MLU specific device, based on its full PCIe address, for GPUDirect RDMA testing\n");
+
+			if (mlu_memory_dmabuf_supported()) {
+				printf("      xxuse_mlu_dmabuf");
+				printf(" MLU doesnot support DMA-BUF\n");
+			}
+		}
+
 		if (rocm_memory_supported()) {
 			printf("      --use_rocm=<rocm device id>");
 			printf(" Use selected ROCm device for GPUDirect RDMA testing\n");
@@ -800,6 +814,9 @@ static void init_perftest_params(struct perftest_parameters *user_param)
 	user_param->cuda_device_id	= 0;
 	user_param->cuda_device_bus_id	= NULL;
 	user_param->use_cuda_dmabuf	= 0;
+	user_param->mlu_device_id	= 0;
+	user_param->mlu_device_bus_id	= NULL;
+	user_param->use_mlu_dmabuf	= 0;
 	user_param->rocm_device_id	= 0;
 	user_param->neuron_core_id	= 0;
 	user_param->mmap_file		= NULL;
@@ -1146,23 +1163,28 @@ static void force_dependecies(struct perftest_parameters *user_param)
 	switch (user_param->aes_block_size)
 	{
 		case AES_XTS_BLOCK_SIZE_520:
-			user_param->aes_block_size = MLX5DV_BLOCK_SIZE_520;
+			// user_param->aes_block_size = MLX5DV_BLOCK_SIZE_520;
+			user_param->aes_block_size = AES_XTS_BLOCK_SIZE_520;
 			break;
 
 		case AES_XTS_BLOCK_SIZE_4048:
-			user_param->aes_block_size = MLX5DV_BLOCK_SIZE_4048;
+			// user_param->aes_block_size = MLX5DV_BLOCK_SIZE_4048;
+			user_param->aes_block_size = AES_XTS_BLOCK_SIZE_4048;
 			break;
 
 		case AES_XTS_BLOCK_SIZE_4096:
-			user_param->aes_block_size = MLX5DV_BLOCK_SIZE_4096;
+			// user_param->aes_block_size = MLX5DV_BLOCK_SIZE_4096;
+			user_param->aes_block_size = AES_XTS_BLOCK_SIZE_4096;
 			break;
 
 		case AES_XTS_BLOCK_SIZE_4160:
-			user_param->aes_block_size = MLX5DV_BLOCK_SIZE_4160;
+			// user_param->aes_block_size = MLX5DV_BLOCK_SIZE_4160;
+			user_param->aes_block_size = AES_XTS_BLOCK_SIZE_4160;
 			break;
 
 		default:
-			user_param->aes_block_size = MLX5DV_BLOCK_SIZE_512;
+			// user_param->aes_block_size = MLX5DV_BLOCK_SIZE_512;
+			user_param->aes_block_size = AES_XTS_BLOCK_SIZE_512;
 			break;
 	}
 #endif
@@ -1716,6 +1738,8 @@ static void force_dependecies(struct perftest_parameters *user_param)
 		exit(1);
 	}
 
+	// todo. does mlu need this?
+
 	if ( (user_param->connection_type == UD) && (user_param->inline_size > MAX_INLINE_UD) ) {
 		printf(RESULT_LINE);
 		fprintf(stderr, "Setting inline size to %d (Max inline size in UD)\n",MAX_INLINE_UD);
@@ -2220,6 +2244,9 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 	static int use_cuda_flag = 0;
 	static int use_cuda_bus_id_flag = 0;
 	static int use_cuda_dmabuf_flag = 0;
+	static int use_mlu_flag = 0;
+	static int use_mlu_bus_id_flag = 0;
+	static int use_mlu_dmabuf_flag = 0;
 	static int use_rocm_flag = 0;
 	static int use_neuron_flag = 0;
 	static int use_neuron_dmabuf_flag = 0;
@@ -2375,6 +2402,9 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 			{ .name = "use_cuda",		.has_arg = 1, .flag = &use_cuda_flag, .val = 1},
 			{ .name = "use_cuda_bus_id",	.has_arg = 1, .flag = &use_cuda_bus_id_flag, .val = 1},
 			{ .name = "use_cuda_dmabuf",	.has_arg = 0, .flag = &use_cuda_dmabuf_flag, .val = 1},
+			{ .name = "use_mlu",		.has_arg = 1, .flag = &use_mlu_flag, .val = 1},
+			{ .name = "use_mlu_bus_id",	.has_arg = 1, .flag = &use_mlu_bus_id_flag, .val = 1},
+			{ .name = "use_mlu_dmabuf",	.has_arg = 0, .flag = &use_mlu_dmabuf_flag, .val = 0},
 			{ .name = "use_rocm",		.has_arg = 1, .flag = &use_rocm_flag, .val = 1},
 			{ .name = "use_neuron",		.has_arg = 1, .flag = &use_neuron_flag, .val = 1},
 			{ .name = "use_neuron_dmabuf",	.has_arg = 0, .flag = &use_neuron_dmabuf_flag, .val = 1},
@@ -2797,6 +2827,8 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 				/* We statically define memory type options so check if requested option is actually supported. */
 				if (((use_cuda_flag || use_cuda_bus_id_flag) && !cuda_memory_supported()) ||
 				    (use_cuda_dmabuf_flag && !cuda_memory_dmabuf_supported()) ||
+					((use_mlu_flag || use_mlu_bus_id_flag) && !mlu_memory_supported()) ||
+				    (use_mlu_dmabuf_flag && !mlu_memory_dmabuf_supported()) ||
 				    (use_rocm_flag && !rocm_memory_supported()) ||
 				    (use_neuron_flag && !neuron_memory_supported()) ||
 				    (use_neuron_dmabuf_flag && !neuron_memory_dmabuf_supported()) ||
@@ -2807,7 +2839,8 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 				/* Memory types are mutually exclucive, make sure we were not already asked to use a different memory type. */
 				if (user_param->memory_type != MEMORY_HOST &&
 				    (mmap_file_flag || use_rocm_flag || use_neuron_flag || use_hl_flag ||
-				     ((use_cuda_flag || use_cuda_bus_id_flag) && user_param->memory_type != MEMORY_CUDA))) {
+				     ((use_cuda_flag || use_cuda_bus_id_flag) && user_param->memory_type != MEMORY_CUDA) ||
+					 ((use_mlu_flag || use_mlu_bus_id_flag) && user_param->memory_type != MEMORY_MLU))) {  // 后续的多种内存可能需要此处逻辑作调整
 					fprintf(stderr, " Can't use multiple memory types\n");
 					return FAILURE;
 				}
@@ -2832,6 +2865,28 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 						return FAILURE;
 					}
 					use_cuda_dmabuf_flag = 0;
+				}
+				if (use_mlu_flag) {
+					CHECK_VALUE_NON_NEGATIVE(user_param->mlu_device_id,int,"MLU device",not_int_ptr);
+					user_param->memory_type = MEMORY_MLU;
+					user_param->memory_create = mlu_memory_create;
+					use_mlu_flag = 0;
+				}
+				if (use_mlu_bus_id_flag) {
+					user_param->mlu_device_bus_id = strdup(optarg);
+					printf("Got PCIe address of: %s\n", user_param->mlu_device_bus_id);
+					user_param->memory_type = MEMORY_MLU;
+					user_param->memory_create = mlu_memory_create;
+					use_mlu_bus_id_flag = 0;
+				}
+				if (use_mlu_dmabuf_flag) {
+					user_param->use_mlu_dmabuf = 0; // MLU does not support DMA-BUF
+					if (user_param->memory_type != MEMORY_MLU) {
+						fprintf(stderr, "MLU does not support DMA-BUF, MLU DMA-BUF cannot be used without MLU\n");
+						free(duplicates_checker);
+						return FAILURE;
+					}
+					use_mlu_dmabuf_flag = 0;
 				}
 				if (use_rocm_flag) {
 					CHECK_VALUE_NON_NEGATIVE(user_param->rocm_device_id,int,"ROCm device",not_int_ptr);
@@ -3500,6 +3555,9 @@ void ctx_print_test_info(struct perftest_parameters *user_param)
 
 	if (rocm_memory_supported())
 		printf(" Use ROCm memory : %s\n", user_param->memory_type == MEMORY_ROCM ? "ON" : "OFF");
+	
+	if (mlu_memory_supported())
+		printf(" Use MLU memory : %s\n", user_param->memory_type == MEMORY_MLU ? "ON" : "OFF");
 
 	printf(" Data ex. method : %s",exchange_state[temp]);
 
@@ -3737,6 +3795,8 @@ static void write_test_info_to_file(int out_json_fds, struct perftest_parameters
 		temp = 1;
 
 	dprintf(out_json_fds, "\"Use_ROCm_memory\": \"%s\",\n", user_param->memory_type == MEMORY_ROCM ? "ON" : "OFF");
+
+	dprintf(out_json_fds, "\"Use_MLU_memory\": \"%s\",\n", user_param->memory_type == MEMORY_MLU ? "ON" : "OFF");
 
 	dprintf(out_json_fds, "\"Data_ex_method\": \"%s\"",exchange_state[temp]);
 

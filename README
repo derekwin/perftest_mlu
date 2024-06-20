@@ -48,7 +48,7 @@ git clone <URL>, In our situation its --> git clone https://github.com/linux-rdm
 -./autogen.sh
 
 -./configure    Note:If you want to install in a specific directory use the optional flag --prefix=<Directory path> , e.g: ./configure --prefix=<Directory path>
-
+./configure /home/liujinyao/proj/perftest_mlu/install MLU_H_PATH=/usr/local/neuware/include/cnrt.h
 -make
 
 -make install

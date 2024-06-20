@@ -5,5 +5,6 @@ mkdir -p m4 config/m4 config/aux
 libtoolize --force --copy
 aclocal -I config
 autoheader
+autoupdate
 automake --foreign --add-missing --copy
 autoconf
